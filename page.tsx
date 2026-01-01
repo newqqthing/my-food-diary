@@ -1,115 +1,93 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
-export default function AddPage() {
-  const router = useRouter()
-  const [name, setName] = useState('')
-  const [location, setLocation] = useState('')
-  const [rating, setRating] = useState(5)
-  const [allCats, setAllCats] = useState<any[]>([])
-  const [selectedCats, setSelectedCats] = useState<string[]>([])
-  const [file, setFile] = useState<File | null>(null)
-  const [loading, setLoading] = useState(false)
+export default function Home() {
+  const [restaurants, setRestaurants] = useState<any[]>([])
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
-    // 取得資料庫中預設的類別
-    async function getCats() {
-      const { data } = await supabase.from('categories').select('*')
-      if (data) setAllCats(data)
-    }
-    getCats()
+    fetchRes()
   }, [])
 
-  const save = async () => {
-    if (!name) return alert('請輸入餐廳名稱')
-    setLoading(true)
-    try {
-      let imageUrl = ''
-      if (file) {
-        const fileName = `${Math.random()}.jpg`
-        await supabase.storage.from('restaurant-images').upload(fileName, file)
-        const { data } = supabase.storage.from('restaurant-images').getPublicUrl(fileName)
-        imageUrl = data.publicUrl
-      }
+async function fetchRes() {
+  const { data, error } = await supabase
+    .from('restaurants')
+    .select(`
+      *,
+      categories:restaurant_categories(categories(name)),
+      dishes(dish_name)
+    `)
+    .order('created_at', { ascending: false });
+  
+  if (data) setRestaurants(data);
+}
 
-      // 1. 儲存餐廳
-      const { data: resData, error: resError } = await supabase
-        .from('restaurants')
-        .insert([{ name, location, rating, image_url: imageUrl, type: '多類別' }])
-        .select().single()
+  // 強大搜尋邏輯
+const filteredRes = restaurants.filter(res => {
+  const s = searchTerm.toLowerCase();
+  
+  // 檢查餐廳名、地點
+  const inBasic = res.name.toLowerCase().includes(s) || res.location?.toLowerCase().includes(s);
+  
+  // 檢查類別名 (Array.some)
+  const inCat = res.categories?.some((c: any) => c.categories.name.toLowerCase().includes(s));
+  
+  // 檢查菜名 (Array.some)
+  const inDish = res.dishes?.some((d: any) => d.dish_name.toLowerCase().includes(s));
 
-      if (resError) throw resError
-
-      // 2. 儲存餐廳與類別的關聯 (多對多)
-      if (selectedCats.length > 0) {
-        const insertData = selectedCats.map(catId => ({
-          restaurant_id: resData.id,
-          category_id: catId
-        }))
-        await supabase.from('restaurant_categories').insert(insertData)
-      }
-
-      alert('收藏成功！✨')
-      router.push('/')
-    } catch (err: any) {
-      alert(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
+  return inBasic || inCat || inDish;
+});
 
   return (
-    <div className="p-8 max-w-lg mx-auto bg-[#FFF9F5] min-h-screen text-gray-700">
-      <h1 className="text-2xl font-black mb-6 text-[#FF8C69] text-center">🧁 新增我的私藏 🍰</h1>
-      
-      <div className="space-y-5 bg-white p-6 rounded-3xl shadow-sm border-2 border-[#FFDAB9]">
-        <div>
-          <label className="block text-sm font-bold mb-2 text-gray-400 ml-2">餐廳名稱</label>
-          <input className="w-full p-3 rounded-2xl bg-gray-50 border-none shadow-inner" placeholder="這間店叫什麼呢？" value={name} onChange={(e)=>setName(e.target.value)} />
-        </div>
-
-        <div>
-          <label className="block text-sm font-bold mb-2 text-gray-400 ml-2">地點</label>
-          <input className="w-full p-3 rounded-2xl bg-gray-50 border-none shadow-inner" placeholder="📍 哪區？(如: 旺角)" value={location} onChange={(e)=>setLocation(e.target.value)} />
-        </div>
-
-        {/* 類別選擇 */}
-        <div>
-          <label className="block text-sm font-bold mb-2 text-gray-400 ml-2">料理種類 (可多選)</label>
-          <div className="flex flex-wrap gap-2">
-            {allCats.map(cat => (
-              <button 
-                key={cat.id}
-                onClick={() => selectedCats.includes(cat.id) ? setSelectedCats(selectedCats.filter(id => id !== cat.id)) : setSelectedCats([...selectedCats, cat.id])}
-                className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all ${selectedCats.includes(cat.id) ? 'bg-[#FF8C69] text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}
-              >
-                {cat.name}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 星級選擇 */}
-        <div>
-          <label className="block text-sm font-bold mb-1 text-gray-400 ml-2">總體推薦度</label>
-          <div className="flex gap-2 px-2">
-            {[1,2,3,4,5].map(s => (
-              <button key={s} onClick={()=>setRating(s)} className={`text-3xl transition ${s <= rating ? 'text-yellow-400 scale-110' : 'text-gray-200'}`}>★</button>
-            ))}
-          </div>
-        </div>
-
-        <div className="pt-4">
-          <label className="text-xs text-gray-300 block mb-2 ml-2">上傳餐廳門面或環境照：</label>
-          <input type="file" onChange={(e)=>setFile(e.target.files?.[0] || null)} className="text-xs" />
-        </div>
-
-        <button onClick={save} disabled={loading} className="w-full py-4 bg-[#FF8C69] text-white rounded-2xl font-black shadow-lg hover:bg-[#FF7F50] transition mt-4">
-          {loading ? '正在變魔術...' : '確認收藏 ✨'}
-        </button>
+    <main className="p-6 max-w-4xl mx-auto min-h-screen bg-[#FFF9F5] text-gray-700">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-black text-[#FF8C69] tracking-tighter">MyFoodie 🧸</h1>
+        <Link href="/add" className="bg-[#FF8C69] text-white px-5 py-2 rounded-2xl font-bold shadow-md hover:scale-105 transition">
+          + 新增紀錄
+        </Link>
       </div>
-    </div>
+
+      <div className="mb-8">
+        <input 
+          type="text"
+          placeholder="🔍 搜餐廳、搜類別、搜你想吃的菜..."
+          className="w-full p-4 rounded-3xl border-none shadow-sm focus:ring-2 focus:ring-[#FF8C69] outline-none bg-white text-lg"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {filteredRes.map((res) => (
+          <div key={res.id} className="bg-white rounded-[2rem] shadow-sm overflow-hidden border border-orange-50 hover:shadow-md transition-all">
+            {res.image_url && <img src={res.image_url} className="h-48 w-full object-cover" />}
+            <div className="p-5">
+              <div className="flex justify-between items-start mb-2">
+                <h2 className="text-xl font-black text-gray-800">{res.name}</h2>
+                <span className="text-yellow-400 font-bold">★ {res.rating}</span>
+              </div>
+              
+              {/* 顯示多個類別標籤 */}
+              <div className="flex flex-wrap gap-1 mb-3">
+                {res.categories?.map((c: any, i: number) => (
+                  <span key={i} className="bg-orange-50 text-[#FF8C69] text-[10px] px-2 py-0.5 rounded-full font-bold">
+                    #{c.categories.name}
+                  </span>
+                ))}
+                <span className="bg-blue-50 text-blue-400 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                  📍 {res.location || '未知'}
+                </span>
+              </div>
+
+              <Link href={`/restaurant/${res.id}`} className="block text-center py-2 bg-gray-50 text-gray-400 text-xs font-bold rounded-xl hover:bg-orange-50 hover:text-[#FF8C69] transition">
+                查看紀錄與菜式 →
+              </Link>
+            </div>
+          </div>
+        ))}
+      </div>
+    </main>
   )
 }

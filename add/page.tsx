@@ -34,22 +34,19 @@ export default function AddPage() {
         imageUrl = data.publicUrl
       }
 
-      // 1. 儲存餐廳
-      const { data: resData, error: resError } = await supabase
-        .from('restaurants')
-        .insert([{ name, location, rating, image_url: imageUrl, type: '多類別' }])
-        .select().single()
+     const { data: resData, error: resError } = await supabase
+  .from('restaurants')
+  .insert([{ name, location, rating, image_url: imageUrl }])
+  .select().single();
 
-      if (resError) throw resError
-
-      // 2. 儲存餐廳與類別的關聯 (多對多)
-      if (selectedCats.length > 0) {
-        const insertData = selectedCats.map(catId => ({
-          restaurant_id: resData.id,
-          category_id: catId
-        }))
-        await supabase.from('restaurant_categories').insert(insertData)
-      }
+if (resData && selectedCats.length > 0) {
+  // 將選中的每個類別 ID 都存入關聯表
+  const relationData = selectedCats.map(catId => ({
+    restaurant_id: resData.id,
+    category_id: catId
+  }));
+  await supabase.from('restaurant_categories').insert(relationData);
+}
 
       alert('收藏成功！✨')
       router.push('/')
